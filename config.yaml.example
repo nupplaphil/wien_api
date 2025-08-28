@@ -1,0 +1,59 @@
+# Copy to config.yaml and adjust values (env placeholders are supported)
+
+mqtt:
+  host: ${MOSQUITTO_HOST:mqtt}
+  port: 1883
+  username: ${MOSQUITTO_USER:}
+  password: ${MOSQUITTO_PASS:}
+  base_topic: "vienna/lines"
+  retain: true
+  log_publish: false
+  reconnect_min: 2
+  reconnect_max: 30
+
+  # Home Assistant MQTT Discovery
+  discovery:
+    enabled: true
+    prefix: "homeassistant"
+    device:
+      name: "Vienna Lines"
+      manufacturer: "Tokiostrasse"
+      model: "WL Board Aggregator"
+      identifiers: ["vienna_lines_gateway"]
+
+http:
+  bind: "0.0.0.0"
+  port: 5000
+  waitress_threads: 16
+
+wien:
+  base_url: "http://www.wienerlinien.at/ogd_realtime/monitor"
+  sender: "smart-home"
+  activate_info: ["stoerunglang"]
+  interval_seconds: 30     # Respect fair use (>= 15s enforced)
+  http_timeout: 10
+  user_agent: "Mozilla/5.0"
+  stop_ids: []             # optionally: ["1234", "5678"]
+  diva_ids: ["60200607", "60200627"]
+
+# Curated boards (server trims departures to max_departures)
+boards:
+  jb:
+    title: "Josef-Baumann-Gasse"
+    max_departures: 3
+    rules:
+      - stop: "Josef-Baumann-Gasse"
+        lines:
+          - { name: "26", towards_regex: "Hausfeldstraße\\s*U" }
+      - stop: "Josef-Baumann-Gasse"
+        lines:
+          - { name: "25", towards_regex: "Floridsdorf" }
+          - { name: "26", towards_regex: "Strebersdorf" }
+
+  kagran-u1:
+    title: "Kagran U1 → Karlsplatz"
+    max_departures: 3
+    rules:
+      - stop: "Kagran"
+        lines:
+          - { name: "U1", towards_regex: "Oberlaa|Alaudagasse" }

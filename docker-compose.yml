@@ -1,0 +1,24 @@
+services:
+  wien_api:
+    image: ${DOCKERHUB_USERNAME:-yourname}/wien_api:latest
+    container_name: wien_api
+    restart: unless-stopped
+    environment:
+      MOSQUITTO_HOST: mosquitto
+      MOSQUITTO_USER: mqtt
+      MOSQUITTO_PASS: secret
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
