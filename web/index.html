@@ -1,0 +1,337 @@
+
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Wiener Linien Abfahrten</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --text:#111; --muted:#666; --border:#e5e7eb; --bg:#fafafa; --chip:#eaeaea;
+      --radius:12px;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 1rem; color: var(--text); background: #fff; }
+    h1 { margin: .25rem 0 1rem; font-size: clamp(1.6rem, 2.5vw, 2.2rem); }
+    #status { font-size: .9rem; color: var(--muted); margin-bottom: .75rem; }
+    .grid { display: grid; gap: .9rem; }
+    .stop { border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem; background: var(--bg); }
+    .stop h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+    .meta { color: var(--muted); font-size: .92rem; }
+    .lines { margin-top: .35rem; display: grid; gap: .35rem; }
+    .line-head { display: flex; align-items: baseline; gap: .5rem; }
+    .line-code { font-weight: 700; min-width: 2ch; }
+    .towards { color: var(--muted); }
+    .chips { margin-top: .25rem; }
+    .chip { display:inline-block; padding:.18rem .5rem; background: var(--chip);
+            border:1px solid var(--border); border-radius: 999px; margin:.12rem; font-size:.9rem; }
+    .muted { color: var(--muted); }
+    .footer { margin-top: .25rem; font-size:.85rem; color: var(--muted); }
+    .hidden { display:none; }
+    .error { color:#B00020; }
+  </style>
+</head>
+<body>
+  <h1>Wiener Linien Abfahrten</h1>
+  <div id="status">Initialisiere…</div>
+  <div id="container" class="grid"></div>
+
+  <script>
+    /*********************
+     * State & Utilities *
+     *********************/
+    // Stops-Struktur: key = stopKey(title|platform), value = { stop, lines: Map(lineName -> {name, towards, type, departures[]}), ts }
+    const stops = new Map();
+    let lastSnapshotTs = 0;
+    const params = new URLSearchParams(window.location.search);
+    const BOARD = params.get('board');
+
+    function norm(s){ return (s || '').replace(/\s+/g,' ').trim(); }    
+    function lineKey(name, towards){ return `${norm(name)}|${norm(towards)}`; }
+    
+    function dedupeDepartures(list){
+      const seen = new Set();
+      const out = [];
+      for (const d of list || []) {
+        if (!d || typeof d.countdown !== 'number' || !isFinite(d.countdown)) continue;
+        const key = `${d.timeReal || ''}|${d.timePlanned || ''}|${d.countdown}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(d);
+      }
+      out.sort((a,b) => a.countdown - b.countdown);
+      return out.slice(0, 8);
+    }
+
+    function get(obj, path, fallback) {
+      try {
+        return path.split('.').reduce((a,k)=> (a && a[k]!==undefined) ? a[k] : undefined, obj) ?? fallback;
+      } catch { return fallback; }
+    }
+
+    function stopKeyOf(stop) {
+      return `${(stop.title || 'Unbekannt').trim()}|${stop.platform || ''}`;
+    }
+
+    function fmtUpdated(ts) {
+      const d = new Date((ts || Date.now()) * (ts > 1e12 ? 1 : 1000)); // akzeptiert sek/ms
+      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    }
+
+    function isNumber(n) { return typeof n === 'number' && isFinite(n); }
+
+    function mergeLine(from, into) {
+      into.name = from.name ?? into.name ?? '';
+      into.type = from.type ?? into.type ?? '';
+      // towards je Key fix; trotzdem auffüllen, falls leer
+      if (!into.towards && from.towards) into.towards = norm(from.towards);
+
+      const merged = [
+        ...(into.departures || []),
+        ...((from.departures || []).filter(d => d && typeof d.countdown === 'number'))
+      ];
+      into.departures = dedupeDepartures(merged);
+    }
+
+    function upsertMonitor(mon, ts) {
+      const stop = mon.stop || {};
+      const key = stopKeyOf(stop);
+
+      let rec = stops.get(key);
+      if (!rec) { rec = { stop, lines: new Map(), ts: ts || Date.now() }; stops.set(key, rec); }
+      rec.ts = Math.max(rec.ts || 0, ts || Date.now());
+  
+      for (const ln of (mon.lines || [])) {
+        const k = lineKey(ln.name, ln.towards);      // <-- pro Richtung
+        const existing = rec.lines.get(k) || {
+          name: norm(ln.name || ''),
+          towards: norm(ln.towards || ''),
+          type: ln.type || '',
+          departures: []
+        };
+        mergeLine(ln, existing);
+        rec.lines.set(k, existing);
+      }
+    }
+
+    function processItem(item) {
+      const ts = item.ts || Date.now();
+  
+      // 1) Temporär pro Stop die Linien aus DIESEM item sammeln/mergen
+      //    Struktur: Map<stopKey, { stop, ts, lines: Map<lineKey, lineObj> }>
+      const tempByStop = new Map();
+
+      for (const mon of (item.items || [])) {
+        const stop = mon.stop || {};
+        const stopKey = stopKeyOf(stop);
+        let bucket = tempByStop.get(stopKey);
+        if (!bucket) {
+          bucket = { stop, ts, lines: new Map() };
+          tempByStop.set(stopKey, bucket);
+        } else {
+          bucket.ts = Math.max(bucket.ts, ts);
+        }
+
+        for (const ln of (mon.lines || [])) {
+          const k = lineKey(ln.name, ln.towards);
+          const base = bucket.lines.get(k) || {
+            name: norm(ln.name || ''),
+            towards: norm(ln.towards || ''),
+            type: ln.type || '',
+            departures: []
+          };
+          // merge innerhalb dieses items
+          const merged = [
+            ...(base.departures || []),
+            ...((ln.departures || []).filter(d => d && typeof d.countdown === 'number'))
+          ];
+          base.departures = dedupeDepartures(merged);
+          bucket.lines.set(k, base);
+        }
+      }
+ 
+      // 2) In den globalen State einspielen: für JEDE Linie,
+      //    die dieses item liefert, wird der alte Eintrag ersetzt (nicht gemerged).
+      for (const [stopKey, bucket] of tempByStop.entries()) {
+        let rec = stops.get(stopKey);
+        if (!rec) {
+          rec = { stop: bucket.stop, lines: new Map(), ts: bucket.ts };
+          stops.set(stopKey, rec);
+        } else {
+          // stop-Daten nicht hart überschreiben; nur ergänzen, ts aktualisieren
+          rec.ts = Math.max(rec.ts || 0, bucket.ts || Date.now());
+          // Plattform/Titel/Muni falls leer auffüllen
+          rec.stop = {
+            title: rec.stop?.title || bucket.stop?.title,
+            platform: rec.stop?.platform ?? bucket.stop?.platform ?? null,
+            municipality: rec.stop?.municipality || bucket.stop?.municipality,
+            rbl: rec.stop?.rbl ?? bucket.stop?.rbl ?? null
+          };
+        }
+        // **Ersetzen** statt anhäufen:
+        for (const [lk, lineObj] of bucket.lines.entries()) {
+          rec.lines.set(lk, lineObj);
+        }
+      }
+    }    
+
+    function resetState() {
+      stops.clear();
+      lastSnapshotTs = 0;
+    }
+
+    /******************
+     * Render         *
+     ******************/
+    function render() {
+      const container = document.getElementById('container');
+      const cards = [...stops.values()];
+      cards.sort((a,b) => (a.stop.title || '').localeCompare(b.stop.title || '') ||
+                          (norm(a.stop.platform) || '').localeCompare(norm(b.stop.platform) || ''));
+  
+      if (!cards.length) {
+        container.innerHTML = `<div class="muted">Noch keine Daten…</div>`;
+        return;
+      }
+
+      container.innerHTML = cards.map(rec => {
+        const s = rec.stop || {};
+        const title = (s.title || 'Unbekannte Haltestelle').trim();
+        const platform = s.platform ? ` · Gleis ${s.platform}` : '';
+        const muni = s.municipality ? ` · ${s.municipality}` : '';
+        const lines = [...rec.lines.values()];
+        const updated = fmtUpdated(rec.ts);
+
+        return `
+          <div class="stop">
+            <h2>${title}<span class="meta">${platform}${muni}</span></h2>
+            <div class="lines">
+              ${lines.map(l => `
+                <div>
+                  <div class="line-head">
+                    <span class="line-code">${l.name || ''}</span>
+                    <span class="towards">${(l.towards || '').trim()}</span>
+                  </div>
+                  <div class="chips">
+                    ${(l.departures || []).map(d => `<span class="chip">${Number.isFinite(d.countdown) ? d.countdown : '–'} min</span>`).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <div class="footer">zuletzt aktualisiert: ${updated}</div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    /******************
+     * Networking     *
+     ******************/
+    const statusEl = document.getElementById('status');
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle('error', !!isError);
+    }
+
+    async function loadSnapshot() {
+      try {
+        setStatus('Lade Snapshot…');
+        const url = BOARD ? `/api/board/${encodeURIComponent(BOARD)}` : '/api/wien';
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const js = await res.json();
+    
+        // Titel für Boards setzen
+        if (BOARD && js.title) {
+	  document.title = `Wiener Linien – ${js.title}`;
+          const h1 = document.querySelector('h1');
+          if (h1) h1.textContent = js.title;
+        }
+
+        resetState();
+
+        if (BOARD) {
+          // Board-API: js.items ist bereits die Monitorliste -> in "Vollansicht-Pseudoformat" umwickeln
+          const synthetic = {
+            ts: js.generatedAt || Date.now(),
+            items: Array.isArray(js.items) ? js.items : []
+          };
+          processItem(synthetic);
+        } else {
+          // Vollansicht: js.items enthält die Item-Objekte wie gehabt
+          for (const it of (js.items || [])) processItem(it);
+        }
+  
+        render();
+        setStatus(`Snapshot geladen (${fmtUpdated(lastSnapshotTs)})${BOARD ? ' – Board aktiv' : ''}.`);
+      } catch (err) {
+        console.error('Snapshot error', err);
+        setStatus(`Snapshot fehlgeschlagen: ${String(err)}`, true);
+      }
+    }
+
+
+    // SSE mit Auto‑Reconnect (exponentielles Backoff bis 30s)
+    let es;
+    let backoff = 1000; // 1s start
+    const MAX_BACKOFF = 30000;
+
+    function connectSSE() {
+      try {
+        if (es) { es.close?.(); es = null; }
+        es = new EventSource('/api/stream');
+        es.onopen = () => {
+          setStatus('Live verbunden.');
+          backoff = 1000;
+        };
+        es.onerror = () => {
+          setStatus('Live getrennt – reconnect…');
+          es.close();
+          setTimeout(connectSSE, backoff);
+          backoff = Math.min(backoff * 2, MAX_BACKOFF);
+        };
+        es.onmessage = (ev) => {
+          if (!ev || !ev.data) return;
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === 'snapshot') {
+              // vollständiger Snapshot (Server schickt ihn i.d.R. einmal beim Connect)
+              resetState();
+              for (const it of (msg.items || [])) processItem(it);
+              render();
+            } else if (msg.type === 'update') {
+              // inkrementelles Update (ein ganzes "item" inkl. items[])
+              const item = msg.item || msg; // tolerant
+              processItem(item);
+              render();
+            } else {
+              // unbekannter Typ: ignorieren
+            }
+          } catch (e) {
+            // Heartbeat ": ping" oder unparsebare Events ignoriere still
+          }
+        };
+      } catch (e) {
+        setStatus(`SSE‑Start fehlgeschlagen: ${String(e)}`, true);
+      }kagran-u
+    }
+
+    /******************
+     * Boot           *
+     ******************/
+    (async function boot() {
+      await loadSnapshot();
+      if (BOARD) {
+        // Kuratiertes Board: alle 60s frischen Snapshot laden (kein SSE, da ungefiltert)
+        setInterval(loadSnapshot, 60 * 1000);
+        setStatus('Live (Snapshot) – Board aktiv.');
+      } else {
+        // Vollansicht: Live per SSE
+        connectSSE();
+      }
+    })();
+		    
+  </script>
+</body>
+</html>

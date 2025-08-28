@@ -1,0 +1,35 @@
+{
+  "jb": {
+    "title": "Josef-Baumann-Gasse (kuratiert)",
+    "max_departures": 3,
+    "rules": [
+      {
+        "stop": "Josef-Baumann-Gasse",
+        "lines": [
+          { "name": "26", "towards_regex": "Hausfeldstraße\\s*U" }
+        ]
+      },
+      {
+        "stop": "Josef-Baumann-Gasse",
+        "lines": [
+          { "name": "25", "towards_regex": "Floridsdorf" },
+          { "name": "26", "towards_regex": "Strebersdorf" }
+        ]
+      }
+    ]
+  },
+
+  "kagran-u1": {
+    "title": "Kagran U1 Richtung Karlsplatz",
+    "max_departures": 3,
+    "rules": [
+      {
+        "stop": "Kagran",
+        "lines": [
+          { "name": "U1", "towards_regex": "Oberlaa|Alaudagasse" }
+        ]
+      }
+    ]
+  }
+}
+
