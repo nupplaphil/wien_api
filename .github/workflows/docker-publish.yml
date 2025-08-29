@@ -113,10 +113,10 @@ jobs:
           sed -n '1,80p' dist/README.dockerhub.md
 
       - name: Push README to Docker Hub
-        uses: crazy-max/ghaction-dockerhub-description@v3
+        uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
-          readme-filepath: dist/README.dockerhub.md
-          short-description: "Vienna public transport → MQTT, Web & Home Assistant"
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+        short-description: "Vienna public transport → MQTT, Web & Home Assistant"
+        readme-filepath: dist/README.dockerhub.md
