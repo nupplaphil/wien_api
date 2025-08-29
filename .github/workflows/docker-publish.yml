@@ -116,7 +116,7 @@ jobs:
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-        repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
-        short-description: "Vienna public transport → MQTT, Web & Home Assistant"
-        readme-filepath: dist/README.dockerhub.md
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          short-description: "Vienna public transport → MQTT, Web & Home Assistant"
+          readme-filepath: dist/README.dockerhub.md
