@@ -1,11 +1,12 @@
-name: Docker Publish (Hub + GHCR)
+name: Docker Publish (Hub + GHCR + README)
 
 on:
   push:
     branches: ["main"]
-    tags: ["v*.*.*"]  # semver tags like v1.2.3
+    tags: ["v*.*.*"]  # semver tags
 
 env:
+  IMAGE_NAME: wien_api
   IMAGE_NAME_DH: ${{ secrets.DOCKERHUB_USERNAME }}/wien_api
   IMAGE_NAME_GHCR: ghcr.io/${{ github.repository_owner }}/wien_api
 
@@ -14,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write   # needed for GHCR
+      packages: write
 
     steps:
       - name: Checkout
@@ -46,7 +47,6 @@ jobs:
           images: |
             ${{ env.IMAGE_NAME_DH }}
             ${{ env.IMAGE_NAME_GHCR }}
-          # IMPORTANT: use GitHub expressions for enable=
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
@@ -54,8 +54,21 @@ jobs:
             type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
           labels: |
             org.opencontainers.image.title=wien_api
+            org.opencontainers.image.description=Vienna public transport → MQTT, Web & Home Assistant
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}#readme
+
+      - name: Compute primary tag (for README)
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF#refs/tags/v}"
+          else
+            VER="latest"
+          fi
+          echo "tag=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Build & Push (multi-arch → Hub + GHCR)
         uses: docker/build-push-action@v6
@@ -72,3 +85,38 @@ jobs:
             type=registry,ref=${{ env.IMAGE_NAME_DH }}:buildcache,mode=max
             type=registry,ref=${{ env.IMAGE_NAME_GHCR }}:buildcache,mode=max
 
+      # ── README: render and sync to Docker Hub ──────────────────────────────────
+      - name: Render Docker Hub README
+        id: readme
+        run: |
+          mkdir -p dist
+          TAG_DISPLAY="${{ steps.tag.outputs.tag }}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          REPO_SLUG="${{ github.repository }}"
+          IMAGE_DH="${{ env.IMAGE_NAME_DH }}"
+          IMAGE_NAME="${{ env.IMAGE_NAME }}"
+          GHCR_OWNER="${{ github.repository_owner }}"
+          IMAGE_DH_SLUG="docker"
+          IMAGE_DH_REPO="${{ secrets.DOCKERHUB_USERNAME }}"
+          IMAGE_DH_NAME="${IMAGE_NAME}"
+          BASE_TOPIC="vienna/lines"
+          DISCOVERY_PREFIX="homeassistant"
+
+          export TAG_DISPLAY DEFAULT_BRANCH REPO_SLUG IMAGE_DH IMAGE_NAME GHCR_OWNER \
+                 IMAGE_DH_SLUG IMAGE_DH_REPO IMAGE_DH_NAME BASE_TOPIC DISCOVERY_PREFIX
+
+          # simple envsubst (Ubuntu has it in gettext-base)
+          sudo apt-get update -y && sudo apt-get install -y gettext-base
+          envsubst < docs/README.dockerhub.tmpl.md > dist/README.dockerhub.md
+
+          echo "Rendered dist/README.dockerhub.md:"
+          sed -n '1,80p' dist/README.dockerhub.md
+
+      - name: Push README to Docker Hub
+        uses: crazy-max/ghaction-dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          readme-filepath: dist/README.dockerhub.md
+          short-description: "Vienna public transport → MQTT, Web & Home Assistant"
