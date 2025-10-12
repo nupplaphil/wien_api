@@ -1,75 +1,54 @@
-# wien_api
-
-![Build](https://img.shields.io/github/actions/workflow/status/${REPO_SLUG}/docker-publish.yml?branch=${DEFAULT_BRANCH})
-![Docker Pulls](https://img.shields.io/docker/pulls/${IMAGE_DH_SLUG})
-![Image Size](https://img.shields.io/docker/image-size/${IMAGE_DH_SLUG}/${IMAGE_DH_REPO}/${IMAGE_DH_NAME}/${TAG_DISPLAY}?label=size%20(${TAG_DISPLAY}))
+# wien_api — Vienna Public Transport → MQTT, Web & Home Assistant
 
 A lightweight service that consumes the **Wiener Linien Realtime API** and republishes
-departures over **MQTT**, provides a **REST/SSE API**, a minimal **web UI**, and integrates with **Home Assistant** via MQTT Discovery.
+departures over **MQTT**, provides a **REST/SSE API**, a minimal **web UI**, and integrates
+with **Home Assistant** using MQTT Discovery.
 
 ---
 
-## Supported tags
+## Features
 
-- `${TAG_DISPLAY}` (multi-arch: `linux/amd64`, `linux/arm64`, `linux/arm/v7`)
-- Semantic tags on releases (e.g. `1.2.3`, `1.2`, `1`) when pushing `v1.2.3`
-
-Images:
-- Docker Hub: `docker.io/${IMAGE_DH}:${TAG_DISPLAY}`
-- GHCR: `ghcr.io/${GHCR_OWNER}/${IMAGE_NAME}:${TAG_DISPLAY}`
+- Polls [Wiener Linien Realtime API](https://www.wienerlinien.at/open-data)
+- Publishes departures to MQTT (`vienna/lines/<ident>`)
+- Web API & SSE (`/api/wien`, `/api/board/<id>`, `/api/stream`)
+- Web frontend (`/` and `/?board=<id>`)
+- Configurable **boards**: curated stop/line/direction views with `max_departures`
+- Home Assistant MQTT Discovery sensors
 
 ---
 
-## Quick start
+## Quickstart (Docker)
 
-```bash
-docker run -d --name wien_api \
-  -p 5000:5000 \
-  -e MOSQUITTO_HOST=mosquitto \
-  -e MOSQUITTO_USER=mqtt \
-  -e MOSQUITTO_PASS=secret \
-  -v $(pwd)/config.yaml:/app/config.yaml:ro \
-  ${IMAGE_DH}:${TAG_DISPLAY}
+```yaml
+services:
+  wien_api:
+    image: <yourname>/wien_api:latest
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      MOSQUITTO_HOST: mosquitto
+      MOSQUITTO_USER: mqtt
+      MOSQUITTO_PASS: secret
+    ports:
+      - "5000:5000"
 ```
 
-## Configuration
-
-All settings are provided via config.yaml (YAML with ${ENV[:default]} interpolation).
-
-Key sections:
-
-- `mqtt.*` (broker, base_topic, retain, discovery)
-- `http.*` (bind/port)
-- `wien.*` (interval, diva_ids/stop_ids)
-- `boards.*` (curated views, max_departures, regex on towards)
-
-Example: see the *config.yaml.example* in the GitHub repository.
-
-## HTTP API
-
-- `GET /health` → service status
-- `GET /api/wien` → snapshot of cached departures
-- `GET /api/board/<id>` → curated board (departures trimmed server-side)
-- `GET /api/stream` → SSE (snapshot + updates)
-- `POST /api/ha/announce` → re-publish MQTT Discovery
-
-## MQTT Topics
-
-- Departures (JSON): `${BASE_TOPIC}/<ident>`
-- Availability (retained): `${BASE_TOPIC}/availability`
-- Home Assistant:
-  - Discovery (retained): `${DISCOVERY_PREFIX}/sensor/<sensor_id>/config`
-  - State: `${BASE_TOPIC}/boards/<sensor_id>/state`
-  - Attributes: `${BASE_TOPIC}/boards/<sensor_id>/attributes`
-
-## Home Assistant
-
-With discovery enabled in config.yaml the sensors appear automatically.
-Re-announce discovery after a HA restart:
+Start with:
 
 ```bash
-curl -X POST http://<host>:5000/api/ha/announce
+docker compose up -d
 ```
+
+---
+
+## Configuration (`config.yaml`)
+
+All settings come from a single YAML file. `${ENV[:default]}` placeholders are interpolated.
+
+See [`config.yaml.example`](config.yaml.example) for a full example.
+
+---
 
 ## License
 
