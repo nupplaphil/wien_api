@@ -35,6 +35,16 @@ def _dedupe_and_limit(deps: List[Dict[str, Any]], limit: int) -> List[Dict[str, 
     out.sort(key=lambda x: x.get("countdown", 1e9))
     return out[:limit] if (limit and limit > 0) else out
 
+def _minutes_text(items: List[Dict[str, Any]], sep: str = " / ") -> str:
+    parts: List[str] = []
+    for d in items:
+        cd = d.get("countdown")
+        if isinstance(cd, float) and cd.is_integer():
+            parts.append(str(int(cd)))
+        else:
+            parts.append(str(cd))
+    return sep.join(parts)
+
 def build_board(board_id: str) -> Dict[str, Any]:
     spec = _BOARDS.get(board_id)
     if not spec:
@@ -63,11 +73,15 @@ def build_board(board_id: str) -> Dict[str, Any]:
                         continue
                     ln2 = dict(ln)
                     ln2["departures"] = _dedupe_and_limit(ln.get("departures") or [], rule_limit)
+                    ln2["countdown_text"] = _minutes_text(ln2.get("departures") or [])
                     lines_ok.append(ln2)
 
                 if lines_ok:
                     out_items.append({
-                        "stop": stop,
+                        "municipality": stop.get("municipality", ""),
+                        "platform": plat,
+                        "title": stop.get("title", ""),
+                        "rbl": stop.get("rbl", 0),
                         "lines": lines_ok,
                         "trafficInfoCategories": mon.get("trafficInfoCategories", []),
                         "trafficInfos": mon.get("trafficInfos", {})

@@ -40,8 +40,7 @@ def publish_discovery_for_board(client: Client, cfg: AppConfig, board_id: str) -
     dev = _device(cfg)
 
     for item in board.get("items", []):
-        stop = item.get("stop") or {}
-        stop_title = (stop.get("title") or "Unknown").strip()
+        stop_title = (item.get("title") or "Unknown").strip()
         for ln in item.get("lines", []) or []:
             name = (ln.get("name") or "").strip()
             towards = (ln.get("towards") or "").strip()
@@ -75,8 +74,7 @@ def publish_board_states(client: Client, cfg: AppConfig, board_id: str) -> None:
     board = build_board(board_id)
     ts = int(time.time())
     for item in board.get("items", []):
-        stop = item.get("stop") or {}
-        stop_title = (stop.get("title") or "Unknown").strip()
+        stop_title = (item.get("title") or "Unknown").strip()
         for ln in item.get("lines", []) or []:
             name = (ln.get("name") or "").strip()
             towards = (ln.get("towards") or "").strip()
