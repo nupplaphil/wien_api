@@ -119,4 +119,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
           short-description: "Vienna public transport → MQTT, Web & Home Assistant"
-          readme-filepath: dist/README.dockerhub.md
+          readme-filepath: dist/README.md
